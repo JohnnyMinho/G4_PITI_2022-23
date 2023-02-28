@@ -1,7 +1,9 @@
 Cabeçalho -> 32 bits
-Bloco de sincronização -> 20 bits 
+Bloco de sincronização -> 10 bits (Para bit 1 o estado do pino deve ser HIGH, para o bit 0 o estado do pino deve ser LOW, o mesmo aplica-se em todos os outros aspectos).
 Tipo -> 3 bits (7 tipos) -> Hello, Sync, Dados0, Dados1, Dados2
-Tamanho da mensagem (Caso se faça com tamanho variável) -> 8 bits (dá para ter mensagens até 255 bits) 
+Tamanho da mensagem (Caso se faça com tamanho variável) -> 8 bits (dá para ter mensagens até 255 bytes)
+*Tag fluxo, tag mensagem
+ Indica uma identificação o grupo de fluxo[Ex. 1º grupo de 3 tramas da 1º mensagem, 2º grupo de 3 tramas da 2ºmensagem], identifica a mensagem[Indica o número da mensagem dentro do grupo de fluxo]. 
 Start -> 1 bit
 
 Dados -> Varíavel 
