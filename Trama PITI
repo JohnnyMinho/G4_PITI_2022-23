@@ -1,0 +1,11 @@
+Cabeçalho
+Bloco de sincronização ->
+Tipo -> 
+Tentativa -> 
+Tamanho da mensagem (Caso se faça com tamanho variável) -> 255 bits com recurso a um byte
+Start/Stop -> 
+
+Dados
+
+Controlo de Erros
+CRC
