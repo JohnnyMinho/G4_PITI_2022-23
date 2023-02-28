@@ -1,11 +1,11 @@
-Cabeçalho
-Bloco de sincronização ->
-Tipo -> 
-Tentativa -> 
-Tamanho da mensagem (Caso se faça com tamanho variável) -> 255 bits com recurso a um byte
-Start/Stop -> 
+Cabeçalho -> 32 bits
+Bloco de sincronização -> 20 bits 
+Tipo -> 3 bits (7 tipos) -> Hello, Sync, Dados0, Dados1, Dados2
+Tamanho da mensagem (Caso se faça com tamanho variável) -> 8 bits (dá para ter mensagens até 255 bits) 
+Start -> 1 bit
 
-Dados
+Dados -> Varíavel 
 
-Controlo de Erros
-CRC
+Controlo de Erros -> 18 bits
+CRC -> 17 bits (CRC-16)
+Stop bit -> 1 bit
