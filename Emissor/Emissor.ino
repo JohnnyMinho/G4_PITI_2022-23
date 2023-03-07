@@ -15,6 +15,7 @@ byte tag_msg[1]; //Identificação da mensagem quanto à sua posição no seu gr
 byte cauda[17];
 byte tamanho_msg[1];
 byte* dados; //até 255 bytes
+int grupo_fluxo = 0;
 //Variável cabeçalho -
 //Variável cauda
 //Variável pacote , os pacotes são adicionados na função de formar_pacote()
@@ -57,7 +58,7 @@ byte* formular_cabecalho(int grupo_fluxo_envio2, byte tmnh_msg, byte n_envio) {
   return cabecalho;
 }
 
-boolean formar_enviar_pacote(byte* cabec, byte* CRC_part, byte* mensagem, int grupo_fluxo_envio) {
+boolean formar_enviar_pacote(byte* mensagem, int grupo_fluxo_envio) {
   int n_reenvio = 0;
   int tamanho_msg = 0;
 
@@ -68,11 +69,30 @@ boolean formar_enviar_pacote(byte* cabec, byte* CRC_part, byte* mensagem, int gr
   byte* crc = formar_CRC(dados, tamanho_msg); //Formulação do CRC ou seja da cauda da trama
   byte tamanho_msg_byte = byte(tamanho_msg);
   byte n_reenvio_byte = byte(n_reenvio);
-  byte* pacote = (byte*) malloc((4 + tamanho_msg + sizeof(CRC_part)) * sizeof(byte));
+  byte* pacote = (byte*) malloc((4 + tamanho_msg + sizeof(crc)) * sizeof(byte)); //confirmem os tamanhos aqui descritos e no resto das funções.
   byte* cabec_pacote = formular_cabecalho(grupo_fluxo_envio, tamanho_msg_byte, n_reenvio_byte);
-  memcpy(pacote, cabec_pacote, sizeof(cabec_pacote));
+  memcpy(pacote, cabec_pacote, sizeof(cabec_pacote)); //Muitos warnings neste tipo de operações, ver uma maneira mais "aceitável" de fazer este tipo de op.
   memcpy(pacote + sizeof(pacote), dados, sizeof(dados));
   memcpy(pacote + sizeof(pacote), crc, sizeof(crc));
+
+  //Falta implementar o método de envio com recurso ao digitalwrite() ler documentação e ver exemplos do digitalwrite() https://www.arduino.cc/reference/en/language/functions/digital-io/digitalwrite/
+  //Segundo a documentação é melhor utilizar um pino de input que pussa uma resistência de pull-up (ver o porque de ser melhor)
+
+  //------ OPERAÇÕES AO NÍVEL DO BIT, verifiquem no dia 8/3 se isto está a apresentar os valores certos no receptor (o valor HIGH equivale a 5V e o LOW a 0V).
+  for (int tentativas; tentativas < 3; tentativas++) { //Acho que o que está no interiro não é a melhor maneira de fazer isto, mas revejam sff.
+    byte n_reenvio_byte = byte(n_reenvio);
+    byte* cabec_pacote = formular_cabecalho(grupo_fluxo_envio, tamanho_msg_byte, n_reenvio_byte);
+    int tamanho_retirar = sizeof(dados)+sizeof(crc);
+    memcpy(pacote-tamanho_retirar, cabec_pacote, sizeof(cabec_pacote));
+    for (int x = 0; x < sizeof(pacote); x++) {
+      for (int i = 0; i < 8 * sizeof(pacote); i++) {
+        int bit = (pacote[x] >> i) & 0x01;   // obter o valor do bit
+        digitalWrite(SendingPin, bit);    // o pino fica com o valor de 1 ou 0 , HIGH ou LOW respetivamente
+        delayMicroseconds(10);           // PARA A PRIMEIRA TESTAGEM COM O RECEPTOR, quando o receptor conseguir receber mensagens tentem sem este delay
+      }
+    }
+  }
+  //------
   free(pacote);
   free(dados); //TÊMOS DE LIBERTAR A MEMÓRIA EM C , NÃO SE ESQUEÇAM
 }
@@ -89,23 +109,26 @@ void setup() {
 }
 
 void loop() {
-  int grupo_fluxo = 0;
   if (Serial.available() && !flag_dados_disp) {
     int tamanho_recebido = Serial.read(); //Primeiros bytes recebidos representam o tamanho da mensagem que provém da aplicação, se esta variável for igual a 0 é sinal que a aplicação deixou de ter dados para enviar e deseja parar
     if (tamanho_recebido == 0) {
       flag_dados_disp = false;
+      grupo_fluxo--;
     }
     flag_leitura = true;
     flag_dados_disp = true;
     byte temp_dados[tamanho_recebido + 1];
     temp_dados[tamanho_recebido + 1] = '\0';
     while (flag_leitura) {
+      grupo_fluxo++;
       //Enquanto estiver a ler e não chegar alguma notificação de stop, ele continua a ler
       if (Serial.available()) {
         Serial.readBytes(temp_dados, tamanho_recebido); //Recebemos a quantidade de bytes dita pela aplicação e guardamos num buffer, neste caso a variável temporária para o registo dos mesmos
         //Funções de envio arduino - arduino;
+        formar_enviar_pacote(temp_dados, grupo_fluxo);
         Serial.write(flag_leitura); //A aplicação que recebe os dados fica à espera de receber uma flag para saber se pode enviar mais dados
         //Na parte do receptor têmos de receber os bits todos e enquanto o receptor processo aos poucos ele pode receber mais, simplesmente fica num buffer;
+
       }
     }
   }
