@@ -1,55 +1,32 @@
 #include <printf.h>
 #include <stdio.h>
+#include <Arduino.h>
 #include "Tipos.h"
-#include "CRCx.h";
+#include "CRCx.h"
 
 #define SendingPin 14//Define o Pino pelo qual irá ser usado como pino de envio de dados
 //Um pino que não têm nenhum informação importante para qualquer protocolo é o pino 32, um que apenas têm como funções extra ser touch sensitive
 
-int bloco_sync[10] = {1, 1, 0, 1, 1, 1, 1, 0, 1, 1}; //bloco em formato numérico visto que este é transformado em bytes através de shifting
-boolean flag_leitura = false; //Flag para dizer que o esp32 está ocupado a ler informação (incluí o processo de envio).
-boolean flag_dados_disp = false; //Flag que indica ao esp32 que a aplicação têm dados para serem lidos.
+int bloco_sync[8] = {1, 1, 0, 1, 1, 1, 1, 1}; //bloco em formato numérico visto que este é transformado em bytes através de shifting
+int flag_leitura = 0; //Flag para dizer que o esp32 está ocupado a ler informação (incluí o processo de envio).
+int flag_dados_disp = 0; //Flag que indica ao esp32 que a aplicação têm dados para serem lidos.
 byte cabecalho[6];
 byte tag_fluxo[1]; //Identificação do grupo de fluxo a que uma trama pertence, ou seja, como a trama da parte de uma mensagem é retransmitida 3 vezes, é identificado o grupo de tramas a qual esta pertençe
 byte tag_msg[1]; //Identificação da mensagem quanto à sua posição no seu grupo de fluxo
-byte cauda[17];
 byte tamanho_msg[1];
-byte* dados; //até 255 bytes
+int tamanho_boolean = 0;
+int mensagem_boolean = 0;
 int grupo_fluxo = 0;
-//Variável cabeçalho -
-//Variável cauda
-//Variável pacote , os pacotes são adicionados na função de formar_pacote()
+int tamanho_recebido = 0;//Primeiros bytes recebidos representam o tamanho da mensagem que provém da aplicação, se esta variável for igual a 0 é sinal que a aplicação deixou de ter dados para enviar e deseja parar
 
 //Definimos o modo em que o pino escolhido como emissor vai trabalhar
 
 byte* formular_cabecalho(int grupo_fluxo_envio2, byte tmnh_msg, byte n_envio) {
-  
-  byte sync_block[2] = {0b11011110, 0b11000000}; //bloco de sincronização no qual 20 bits vão servir para sincronizar ambos os elementos, ou seja, ao receber uma mensagem o receptor vai começar por igualar todos os valores através de um ciclo.
+
+  byte sync_block = {0b11011111}; //bloco de sincronização no qual 20 bits vão servir para sincronizar ambos os elementos, ou seja, ao receber uma mensagem o receptor vai começar por igualar todos os valores através de um ciclo.
   byte tipo_trama;
   int tamanho_ocupado = 0; //Variável de auxilio devido às características do C
-  Serial.println(sync_block[0]);
-  Serial.println(sync_block[1]);
-  /*
-   * int i = 0; //varíavel temp para rodar o bloco de sync
-  int x = 0; //varíavel para fazer shifting dos bits do bloco de sync
-   * for (i = 1; i < 3; i++) {
-    for (x = 0 + x * i; x < 8 * i; x++) {
-      if(x<11){
-      Serial.println(bloco_sync[x]);
-      sync_block[i-1] |= ~(bloco_sync[x] << x);
-      }else{
-        x = 8*i;
-      }
-    }
-    if(i!=3){ 
-      Serial.print("Bloco:");
-      Serial.println(sync_block[i-1]);
-      cabecalho[i] = sync_block[i-1];
-    }
-    Serial.print("x:");
-    Serial.println(x);
-    Serial.println(i);
-  }*/
+
   int option = 1; //A escolha para já é hardcoded , consoante o que for preciso é alterado, assumo que seja necessário indicar como um argumento ou então como uma questão a adicionar durante a comunicação já que a mesma não é constante
   switch (option) {
     case 0:
@@ -65,28 +42,23 @@ byte* formular_cabecalho(int grupo_fluxo_envio2, byte tmnh_msg, byte n_envio) {
       tipo_trama = Dados2;
       break;
   }
-  memcpy(cabecalho, sync_block, 2);
+  cabecalho[0] = sync_block;
   byte grupo_fluxo_byte = byte(grupo_fluxo_envio2);
   //Serial.println(grupo_fluxo_byte);
-  cabecalho[2] = grupo_fluxo_byte;
-  tamanho_ocupado = 3;
+  cabecalho[1] = grupo_fluxo_byte;
+  tamanho_ocupado = 1;
   //Serial.println(tipo_trama);
-  cabecalho[tamanho_ocupado + 1] = tipo_trama;
-  tamanho_ocupado = tamanho_ocupado + sizeof(tipo_trama);
-  cabecalho[tamanho_ocupado + 1] = tmnh_msg;
-  tamanho_ocupado = tamanho_ocupado + sizeof(tmnh_msg);
-  cabecalho[tamanho_ocupado + 1] = grupo_fluxo_byte;
+  cabecalho[2] = tipo_trama;
+  cabecalho[3] = tmnh_msg;
+  cabecalho[4] = grupo_fluxo_byte;
   //memcpy(cabecalho + tamanho_ocupado, (byte*)grupo_fluxo_byte, sizeof(grupo_fluxo_byte));
-  tamanho_ocupado = tamanho_ocupado + sizeof(grupo_fluxo_byte);
-  cabecalho[tamanho_ocupado + 1] = n_envio;
+  cabecalho[5] = n_envio;
   //memcpy(cabecalho + tamanho_ocupado, (byte*)n_envio, sizeof(n_envio));
-  for(int i = 0; i<4;i++){
-    Serial.println(cabecalho[i]);
-  }
+  cabecalho[6] = '\0';
   return cabecalho;
 }
 
-boolean formar_enviar_pacote(byte* mensagem, int grupo_fluxo_envio,int tamanho_msg) {
+void formar_enviar_pacote(byte* mensagem, int grupo_fluxo_envio, int tamanho_msg) {
   int n_reenvio = 0;
   /*dados = (byte*) malloc(sizeof(mensagem));
     for (int o = 0; o < tamanho_msg; o++) {
@@ -100,61 +72,61 @@ boolean formar_enviar_pacote(byte* mensagem, int grupo_fluxo_envio,int tamanho_m
   //Fim da formação do CRC
   byte tamanho_msg_byte = byte(tamanho_msg);
   byte n_reenvio_byte = byte(n_reenvio);
-  int len = 6+tamanho_msg+2;
-  byte* pacote = (byte*) malloc(len*sizeof(byte)); //confirmem os tamanhos aqui descritos e no resto das funções.
+  int len = 5 + tamanho_msg + 2;
+  //Serial.print("Mem livre:");
+  //Serial.println(ESP.getFreeHeap());
+  byte pacote[len];
   byte* cabec_pacote = formular_cabecalho(grupo_fluxo_envio, tamanho_msg_byte, n_reenvio_byte);
   //A função de formular o cabeçalho em algum erro ao nível da memória
-  memcpy(pacote, cabec_pacote, 6); //Muitos warnings neste tipo de operações, ver uma maneira mais "aceitável" de fazer este tipo de op.
-  Serial.println("Helloprememcpy2");
-  int tamanho_ocupado = 6;
+  memcpy(pacote, cabec_pacote, 5); //Muitos warnings neste tipo de operações, ver uma maneira mais "aceitável" de fazer este tipo de op.
+  int tamanho_ocupado = 5;
   memcpy(pacote + tamanho_ocupado , mensagem, tamanho_msg);
-  Serial.println("Helloprememcpy3");
   tamanho_ocupado = tamanho_ocupado + tamanho_msg;
-  Serial.println(tamanho_ocupado);
-  Serial.print("Testagem do pacote:");
-  Serial.println(pacote[tamanho_ocupado+1]);
-  Serial.println(crc[0]);
-  pacote[tamanho_ocupado+1]=crc[0];
-  pacote[tamanho_ocupado+2]=crc[1];
-  //memcpy(pacote + tamanho_ocupado, crc, 2); 
-  Serial.println("Helloenvio1");
-
+  pacote[tamanho_ocupado] = crc[0];
+  pacote[tamanho_ocupado + 1] = crc[1];
+  tamanho_ocupado = tamanho_ocupado + 2;
+  pacote[tamanho_ocupado] = '\0';
+  Serial.println(pacote[5]);
+  Serial.println(pacote[6]);
+  Serial.println(pacote[7]);
+  Serial.println(pacote[8]);
+  Serial.println(pacote[9]);
+  Serial.println(pacote[10]);
   //Soluções -> Ver se falta o bit de fecho ou então mudar para um array de tamanho fixo
-  
+
   //Falta implementar o método de envio com recurso ao digitalwrite() ler documentação e ver exemplos do digitalwrite() https://www.arduino.cc/reference/en/language/functions/digital-io/digitalwrite/
   //Segundo a documentação é melhor utilizar um pino de input que pussa uma resistência de pull-up (ver o porque de ser melhor)
 
   //------ OPERAÇÕES AO NÍVEL DO BIT, verifiquem no dia 8/3 se isto está a apresentar os valores certos no receptor (o valor HIGH equivale a 5V e o LOW a 0V).
-  for (int tentativas; tentativas < 3; tentativas++) { //Acho que o que está no interiro não é a melhor maneira de fazer isto, mas revejam sff.
+  for (int tentativas = 0; tentativas < 3; tentativas++) { //Acho que o que está no interiro não é a melhor maneira de fazer isto, mas revejam sff.
     byte n_reenvio_byte = byte(n_reenvio);
     byte* cabec_pacote = formular_cabecalho(grupo_fluxo_envio, tamanho_msg_byte, n_reenvio_byte);
-    int tamanho_retirar = sizeof(dados) + sizeof(crc);
-    memcpy(pacote - tamanho_retirar, cabec_pacote, sizeof(cabec_pacote));
-    for (int x = 0; x < sizeof(pacote); x++) {
-      for (int i = 0; i < 8 * sizeof(pacote); i++) {
-        int bit = (pacote[x] >> i) & 0x01;   // obter o valor do bit
-        if(bit == 1){
+    int tamanho_retirar = tamanho_msg + 2;
+    memcpy(pacote - tamanho_retirar, cabec_pacote, 6);
+    Serial.println("Começa o envio");
+    for (int x = 0; x < tamanho_ocupado - 1; x++) {
+      for (int i = 7; i >= 0 ; i--) {
+        int bit_lido = (pacote[x] >> i) & 0x01;   // obter o valor do bit
+
+        if (bit_lido == 1) {
           digitalWrite(SendingPin, HIGH);    // o pino fica com o valor de 1 ou 0 , HIGH ou LOW respetivamente
-        }else{
+        } else {
           digitalWrite(SendingPin, LOW);
         }
-        delayMicroseconds(10);           // PARA A PRIMEIRA TESTAGEM COM O RECEPTOR, quando o receptor conseguir receber mensagens tentem sem este delay
+        Serial.println(bit_lido);
+        //delayMicroseconds(7); // PARA A PRIMEIRA TESTAGEM COM O RECEPTOR, quando o receptor conseguir receber mensagens tentem sem este delay
       }
     }
   }
-  Serial.println("Helloenvio2");
-  //------
-  free(pacote); //Têmos algum erro com o free
-  //free(dados); //TÊMOS DE LIBERTAR A MEMÓRIA EM C , NÃO SE ESQUEÇAM
 }
 
-byte* formar_CRC(byte* dados, int tamanho_dados) { //Função que realiza a formulação do CRC e devolve o resultado como uma variável de 16 bytes sem associação a um tipo de variável em específico (unsigned)
+/*byte* formar_CRC(byte* dados, int tamanho_dados) { //Função que realiza a formulação do CRC e devolve o resultado como uma variável de 16 bytes sem associação a um tipo de variável em específico (unsigned)
   uint16_t result16 = crcx::crc16(dados, tamanho_dados);
   byte crc_bytes[2];
   crc_bytes[0] = (result16 >> 8) & 0xFF; //O MSB fica na primeira posição do array
   crc_bytes[1] = (result16 & 0xFF);// O LSB fica na ultima posição do array
   return crc_bytes;
-} //Como a linguagem C dealoca a memória usada para a função mal esta acabe, é uma boa prática evitar que tentemos devolver arrays como um resultado.
+  } //Como a linguagem C dealoca a memória usada para a função mal esta acabe, é uma boa prática evitar que tentemos devolver arrays como um resultado.*/
 
 void setup() {
   Serial.begin(115200); //Caso precisemos de usar o manchester o output verdadeiro vai ser 57600 bits por segundo
@@ -163,26 +135,45 @@ void setup() {
 
 void loop() {
   if (Serial.available() && !flag_dados_disp) {
-    flag_dados_disp = true;
-    while (flag_dados_disp == true) {
-      int tamanho_recebido = 5; //Serial.read(); //Primeiros bytes recebidos representam o tamanho da mensagem que provém da aplicação, se esta variável for igual a 0 é sinal que a aplicação deixou de ter dados para enviar e deseja parar
-      if (tamanho_recebido == 0) {
-        flag_dados_disp = false;
-        grupo_fluxo--;
-      }
-      flag_leitura = true;
-      byte temp_dados[tamanho_recebido + 1];
-      temp_dados[tamanho_recebido + 1] = '\0';
-      while (flag_leitura && flag_dados_disp) { //Por variavél para sair.
+    Serial.println("Hello1");
+    flag_dados_disp = 1;
+    while (flag_dados_disp == 1) {
+      Serial.println("Hello2");
+      flag_leitura = 1;
+      //Enquanto estiver a ler e não chegar alguma notificação de stop, ele continua a ler
+      while (flag_leitura == 1 && flag_dados_disp == 1) { //Por variavél para sair.
+        //Aguarda o input do tamanho
+        while (tamanho_boolean == 0) {
+          if (Serial.available() >= 2 ){
+            tamanho_recebido = Serial.readStringUntil('\n').toInt(); //-> O tamanho recebido têm de ser dito denovo;
+            Serial.println(tamanho_recebido);
+            tamanho_boolean = 1;
+          }
+        }
         grupo_fluxo++;
-        //Enquanto estiver a ler e não chegar alguma notificação de stop, ele continua a ler
-        if (Serial.available()){
-          Serial.readBytes(&temp_dados[0], tamanho_recebido); //Recebemos a quantidade de bytes dita pela aplicação e guardamos num buffer, neste caso a variável temporária para o registo dos mesmos
+        if (tamanho_recebido == 0) {
+          Serial.println("Acabaram os dados");
+          flag_dados_disp = 0;
+          grupo_fluxo--;
+        }
+        byte temp_dados[tamanho_recebido + 1];
+        temp_dados[tamanho_recebido + 1] = '\0';
+        if (flag_dados_disp == 1) {
+          while (mensagem_boolean == 0) {
+            if (Serial.available() >= tamanho_recebido) {
+              Serial.println("Ler mensagem");
+              Serial.readBytes(temp_dados, tamanho_recebido); //Recebemos a quantidade de bytes dita pela aplicação e guardamos num buffer, neste caso a variável temporária para o registo dos mesmos
+              mensagem_boolean = 1;
+            }
+          }
           //Funções de envio arduino - arduino;
-          formar_enviar_pacote(temp_dados, grupo_fluxo,tamanho_recebido); //-> Esta a dar erros de acesso de memória
+          formar_enviar_pacote(temp_dados, grupo_fluxo, tamanho_recebido);
+          Serial.println("Sai do envio");
           Serial.write(flag_leitura); //A aplicação que envia os dados fica à espera de receber uma flag para saber se pode enviar mais dados
           //Na parte do receptor têmos de receber os bits todos e enquanto o receptor processo aos poucos ele pode receber mais, simplesmente fica num buffer;
         }
+        mensagem_boolean = 0;
+        tamanho_boolean = 0;
       }
     }
   }

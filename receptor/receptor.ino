@@ -4,7 +4,7 @@
 
 #define ReceiverPin 14
 
-int bloco_sync[10] = { 1, 1, 0, 1, 1, 1, 1, 0};  //bloco em formato numérico visto que este é transformado em bytes através de shifting, no receptor ele não precisa de saber qual é o bloco de sync só precisa de saber o tamanho
+int bloco_sync[8] = { 1, 1, 0, 1, 1, 1, 1, 1};  //bloco em formato numérico visto que este é transformado em bytes através de shifting, no receptor ele não precisa de saber qual é o bloco de sync só precisa de saber o tamanho
 boolean flag_leitura = false;                           //Flag para dizer que o esp32 está ocupado a ler informação (incluí o processo de envio).
 boolean flag_dados_disp = false;                        //Flag que indica ao esp32 que a aplicação têm dados para serem lidos.
 byte cabecalho[6];
@@ -19,15 +19,14 @@ int bits_sync = 0;
 int bit_lido = 0;
 //byte buffer_max[];
 byte byte_recebido;
-//Variável cabeçalho -
+//Variável cabeçalho
 //Variável cauda
 //Variável pacote , os pacotes são adicionados na função de formar_pacote()
 
 
 void setup() {
   Serial.begin(115200);  //Caso precisemos de usar o manchester o output verdadeiro vai ser 57600 bits por segundo
-  
-  pinMode(ReceiverPin, INPUT_PULLUP);
+  pinMode(ReceiverPin, INPUT);
 }
 
 
@@ -36,15 +35,18 @@ void setup() {
 //disponível entre a chegada de cada bit é pequena.
 
 void loop() {
-  while (digitalRead(dataPin) == LOW){
-    // do nothing
+  while (digitalRead(ReceiverPin) == LOW){
+    //Serial.print("EM LOW");
   }
   //Muito simplificida
-  while(pacotes_recebidos != 3){
-  if(bits_sync != 9){
-    bits_sync++;
+  while(bits_sync != 32){
     bit_lido = digitalRead(ReceiverPin);
     Serial.println(bit_lido); 
+    pacotes_recebidos++;
+    bits_sync++;
+  }
+  while (digitalRead(ReceiverPin) == HIGH){
+    //Serial.print("SO HIGH");
   }
 }
 
