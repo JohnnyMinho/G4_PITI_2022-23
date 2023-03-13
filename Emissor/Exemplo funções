@@ -1,0 +1,13 @@
+void sendByte(byte data) {
+  for (int i = 0; i < 8; i++) {
+    int bit = (data >> i) & 0x01;   // get the i-th bit of the data -> The bitwise AND operator & then performs a logical AND operation between the shifted data and the mask 0x01. The mask 0x01 has all bits set to zero, except for the least significant bit, which is set to one. This means that the result of the AND operation will be either zero or one, depending on the value of the i-th bit of data.
+    digitalWrite(DATA_PIN, bit);    // set the data pin to the appropriate voltage level
+    delayMicroseconds(10);           // wait for the bit period
+  }
+}
+
+void sendData(byte* data, int length) {
+  for (int i = 0; i < length; i++) {
+    sendByte(data[i]);              // send each byte of data
+  }
+}
