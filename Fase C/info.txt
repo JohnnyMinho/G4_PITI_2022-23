@@ -1,0 +1,4 @@
+Emissor_simplificado e recetor_simplificado contém o código para os ESP32
+
+PITI contêm o código da app
+
